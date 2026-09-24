@@ -1,0 +1,283 @@
+{% extends "base.html" %}
+{% block title %}Revisão do relatório{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="muted small" style="margin:0"><a href="/relatorios">← Relatórios</a></p>
+    <h1>REVISÃO DO RELATÓRIO</h1>
+    <p class="muted" id="subtitle" style="margin:0"></p>
+  </div>
+  <span id="statusBadge"></span>
+</div>
+
+<section class="card">
+  <div class="legend small">
+    <span class="badge badge-auto">Calculado automaticamente</span>
+    <span class="badge badge-cons">Consolidado dos registros · editável</span>
+    <span class="badge badge-human">Preenchimento humano</span>
+  </div>
+  <div id="topNotice" class="notice" hidden style="margin-top:10px"></div>
+</section>
+
+<form id="reportForm" onsubmit="return false">
+  <section class="card report-section o-auto">
+    <div class="section-head"><h2>Mês de referência e 1. Identificação</h2><span class="badge badge-auto">Calculado</span></div>
+    <p class="section-hint">Vem do cadastro da oficina. Para corrigir, edite em <a href="/turmas">Oficinas e turmas</a>.</p>
+    <ul class="readonly-list" id="identification"></ul>
+  </section>
+
+  <section class="card report-section o-cons">
+    <div class="section-head"><h2>2. Resumo das Atividades Realizadas</h2><span class="badge badge-cons">Consolidado</span></div>
+    <p class="section-hint">Descreva o que foi trabalhado em sala de aula (conforme o previsto no Plano de Aula). Montado a partir dos resumos das aulas.</p>
+    <textarea name="activities_summary" rows="8"></textarea>
+    <div class="btn-row suggest-row" style="margin-top:8px" data-field="activities_summary"></div>
+    <details class="records"><summary id="recSummaryTitle">Resumos registrados nas aulas</summary><ul id="recSummary"></ul></details>
+  </section>
+
+  <section class="card report-section o-auto">
+    <div class="section-head"><h2>3. Dados de Participação</h2><span class="badge badge-auto">Calculado</span></div>
+    <p class="section-hint" id="metricsHint"></p>
+    <ul class="readonly-list" id="participation"></ul>
+    <p class="small" style="margin-top:8px"><a id="dashLink" href="/dashboard">Ver frequência individual no dashboard →</a></p>
+  </section>
+
+  <section class="card report-section o-human">
+    <div class="section-head"><h2>4. Metodologia Aplicada e Resultados Observados</h2><span class="badge badge-human">Humano</span></div>
+    <p class="section-hint">A metodologia escolhida funcionou bem neste local? Como os alunos reagiram às propostas?</p>
+    <div class="radio-cards four">
+      {% for key, label, desc in [
+        ("excelente", "Excelente", "Alunos engajados e objetivos atingidos."),
+        ("bom", "Bom", "A maior parte do grupo acompanhou bem."),
+        ("regular", "Regular", "Houve dificuldades de compreensão ou execução."),
+        ("atencao", "Atenção", "Necessário mudar a estratégia para o próximo mês."),
+      ] %}
+      <label class="radio-card"><input type="radio" name="methodology_rating" value="{{ key }}"><span><b>{{ label }}</b><small>{{ desc }}</small></span></label>
+      {% endfor %}
+    </div>
+    <div class="section-head"><span class="fieldset-label">Observações</span><span class="badge badge-cons">Consolidado</span></div>
+    <textarea name="methodology_notes" rows="4"></textarea>
+    <div class="btn-row suggest-row" style="margin-top:8px" data-field="methodology_notes"></div>
+    <details class="records"><summary id="recMethodologyTitle">Observações de metodologia registradas nas aulas</summary><ul id="recMethodology"></ul></details>
+  </section>
+
+  <section class="card report-section o-human">
+    <div class="section-head"><h2>5. Desafios e Logística</h2><span class="badge badge-human">Humano</span></div>
+    <p class="section-hint">Relate dificuldades com o espaço físico, transporte de materiais ou condições do local neste mês específico.</p>
+    <p class="fieldset-label">Infraestrutura</p>
+    <div class="radio-cards two">
+      <label class="radio-card"><input type="radio" name="infrastructure" value="adequada"><b>Adequada</b></label>
+      <label class="radio-card"><input type="radio" name="infrastructure" value="inadequada"><b>Inadequada</b></label>
+    </div>
+    <p class="fieldset-label">Materiais</p>
+    <div class="radio-cards two">
+      <label class="radio-card"><input type="radio" name="materials" value="suficientes"><b>Suficientes</b></label>
+      <label class="radio-card"><input type="radio" name="materials" value="faltando"><b>Faltando</b></label>
+    </div>
+    <label class="field"><span>Comentários</span><textarea name="logistics_comments" rows="3"></textarea></label>
+    <details class="records"><summary id="recNotesTitle">Observações registradas nas aulas (referência)</summary><ul id="recNotes"></ul></details>
+  </section>
+
+  <section class="card report-section o-cons">
+    <div class="section-head"><h2>6. Destaques e Ocorrências</h2><span class="badge badge-cons">Consolidado</span></div>
+    <p class="section-hint">Relate algum caso de sucesso, evolução notável de algum aluno ou qualquer conflito/imprevisto que a coordenação precise saber.</p>
+    <textarea name="highlights_occurrences" rows="6"></textarea>
+    <div class="btn-row suggest-row" style="margin-top:8px" data-field="highlights_occurrences"></div>
+    <details class="records"><summary id="recOccTitle">Ocorrências registradas nas aulas</summary><ul id="recOcc"></ul></details>
+  </section>
+
+  <section class="card report-section o-human">
+    <div class="section-head"><h2>7. Planejamento para o Próximo Mês</h2><span class="badge badge-human">Humano</span></div>
+    <p class="section-hint">Algum material específico ou apoio da coordenação necessário para a próxima etapa?</p>
+    <textarea name="next_month_planning" rows="4"></textarea>
+  </section>
+
+  <section class="card report-section o-human">
+    <div class="form-grid two">
+      <label class="field"><span>Data</span><input type="date" name="report_date"></label>
+      <label class="field"><span>Assinatura do professor (nome)</span><input type="text" name="signature_name"></label>
+    </div>
+  </section>
+</form>
+
+<div class="sticky-actions">
+  <div class="inner" id="actions"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const $ = (id) => document.getElementById(id);
+const REPORT_ID = {{ report_id }};
+const form = $("reportForm");
+const TEXT_FIELDS = ["activities_summary", "methodology_notes", "logistics_comments", "highlights_occurrences", "next_month_planning", "report_date", "signature_name"];
+const RADIO_FIELDS = ["methodology_rating", "infrastructure", "materials"];
+let report = null;
+let dirty = false;
+
+async function load() {
+  try {
+    report = await App.get(`/api/reports/${REPORT_ID}`);
+  } catch (err) {
+    $("topNotice").innerHTML = `${App.esc(err.message)} <button type="button" class="btn btn-sm" id="retryLoad">Tentar novamente</button>`;
+    $("topNotice").className = "notice notice-bad";
+    $("topNotice").hidden = false;
+    $("retryLoad").addEventListener("click", load);
+    return;
+  }
+  render();
+}
+
+function recordList(ulId, titleId, lessons, field, title) {
+  const items = lessons.filter((l) => l[field]);
+  $(titleId).textContent = `${title} (${items.length})`;
+  $(ulId).innerHTML = items.length
+    ? items.map((l) => `<li><b>${App.fmtDate(l.date)}</b> · ${App.esc(l.class_name)}: ${App.esc(l[field])}</li>`).join("")
+    : '<li class="muted">Nenhum registro neste mês.</li>';
+}
+
+function render() {
+  const r = report;
+  const id = r.identification;
+  const isFinal = r.status === "final";
+  $("subtitle").textContent = `${id.workshop_name} · ${r.period.label}`;
+  $("statusBadge").innerHTML = isFinal ? '<span class="badge badge-good">✓ Finalizado</span>' : '<span class="badge badge-warn">Rascunho</span>';
+
+  $("identification").innerHTML = `
+    <li><b>Mês de referência:</b> ${r.period.label}</li>
+    <li><b>Professor(a):</b> ${App.esc(id.instructor_name) || '<span class="flag">⚠ sem professor no cadastro</span>'}</li>
+    <li><b>Oficina/Linguagem:</b> ${App.esc([id.workshop_name, id.language].filter(Boolean).join(" / "))}</li>
+    <li><b>Local/Comunidade atendida:</b> ${App.esc(id.location) || '<span class="flag">⚠ sem local no cadastro</span>'}</li>
+    <li><b>Turmas:</b> ${App.esc(id.classes.join(", "))}</li>`;
+
+  const m = r.metrics;
+  $("participation").innerHTML = `
+    <li><b>Nº de alunos matriculados:</b> ${App.esc(r.participation.enrolled)}</li>
+    <li><b>Média de presença no mês:</b> ${App.esc(r.participation.average)}</li>
+    <li><b>Novas matrículas/Desistências:</b> ${App.esc(r.participation.changes)}</li>
+    <li class="small muted">${m.lessons_count} aulas · ${m.total_present} presenças · ${m.total_absent} faltas · ${m.total_excused} atestados</li>`;
+  $("metricsHint").textContent = r.metrics_source === "snapshot"
+    ? `Números congelados na finalização (${App.fmtDate(r.finalized_at)}).`
+    : "Calculados agora a partir das presenças registradas. Para corrigir, edite as aulas.";
+  $("dashLink").href = `/dashboard${App.qs({ year: r.year, month: r.month, workshop_id: r.workshop_id })}`;
+
+  const lessons = r.records ? r.records.lessons : [];
+  recordList("recSummary", "recSummaryTitle", lessons, "summary", "Resumos registrados nas aulas");
+  recordList("recMethodology", "recMethodologyTitle", lessons, "methodology", "Observações de metodologia registradas nas aulas");
+  recordList("recNotes", "recNotesTitle", lessons, "notes", "Observações registradas nas aulas");
+  recordList("recOcc", "recOccTitle", lessons, "occurrences", "Ocorrências registradas nas aulas");
+
+  for (const f of TEXT_FIELDS) form.elements[f].value = r.fields[f] ?? "";
+  for (const f of RADIO_FIELDS) form.querySelectorAll(`[name="${f}"]`).forEach((el) => (el.checked = el.value === r.fields[f]));
+
+  document.querySelectorAll(".suggest-row").forEach((row) => {
+    row.innerHTML = isFinal ? "" :
+      (r.ai_configured ? `<button type="button" class="btn btn-sm btn-ghost" data-suggest="${row.dataset.field}" data-ai="1">✨ Consolidar com IA</button>` : "") +
+      `<button type="button" class="btn btn-sm" data-suggest="${row.dataset.field}" data-ai="0">Inserir registros originais</button>`;
+  });
+
+  form.querySelectorAll("input, textarea").forEach((el) => (el.disabled = isFinal));
+
+  const notices = [];
+  if (App.params().get("novo")) {
+    notices.push("Rascunho criado. Os textos consolidados são um ponto de partida: revise e edite antes de finalizar.");
+    history.replaceState(null, "", location.pathname);
+  }
+  if (!r.ai_configured && !isFinal) notices.push("IA não configurada: os textos consolidados usam os registros originais das aulas.");
+  if (!isFinal && r.missing_for_finalization.length) notices.push(`Para finalizar, preencha: <b>${r.missing_for_finalization.map((x) => x.label).join(", ")}</b>.`);
+  if (isFinal) notices.push("Relatório finalizado. Para alterar, reabra para edição.");
+  $("topNotice").innerHTML = notices.join("<br>");
+  $("topNotice").className = `notice ${isFinal ? "notice-good" : ""}`;
+  $("topNotice").hidden = !notices.length;
+
+  const printBtn = `<a class="btn" href="/relatorios/${REPORT_ID}/imprimir" target="_blank">${isFinal ? "Imprimir / PDF" : "Pré-visualizar"}</a>`;
+  $("actions").innerHTML = isFinal
+    ? `<button class="btn" type="button" id="reopen">Reabrir para edição</button>
+       <a class="btn" href="/api/reports/${REPORT_ID}/export.docx">Baixar DOCX</a>
+       ${printBtn.replace('class="btn"', 'class="btn btn-primary"')}`
+    : `${printBtn}
+       <button class="btn" type="button" id="saveDraft">Salvar rascunho</button>
+       <button class="btn btn-primary" type="button" id="finalize">Finalizar relatório</button>`;
+  dirty = false;
+}
+
+function collect() {
+  const body = {};
+  for (const f of TEXT_FIELDS) body[f] = form.elements[f].value;
+  body.report_date = body.report_date || null;
+  for (const f of RADIO_FIELDS) {
+    const checked = form.querySelector(`[name="${f}"]:checked`);
+    body[f] = checked ? checked.value : null;
+  }
+  return body;
+}
+
+async function save(silent = false) {
+  report = await App.api("PATCH", `/api/reports/${REPORT_ID}`, collect());
+  dirty = false;
+  if (!silent) { render(); App.toast("Rascunho salvo."); }
+}
+
+document.addEventListener("click", async (e) => {
+  const btn = e.target.closest("button");
+  if (!btn) return;
+  try {
+    if (btn.id === "saveDraft") {
+      btn.disabled = true; btn.textContent = "Salvando…";
+      try { await save(); } finally { btn.disabled = false; btn.textContent = "Salvar rascunho"; }
+    }
+    if (btn.id === "finalize") {
+      btn.disabled = true; btn.textContent = "Finalizando…";
+      try {
+        await save(true);
+        if (report.missing_for_finalization.length) {
+          render();
+          App.toast(`Preencha antes de finalizar: ${report.missing_for_finalization.map((x) => x.label).join(", ")}.`, "error");
+          window.scrollTo({ top: 0, behavior: "smooth" });
+          return;
+        }
+        if (!confirm("Finalizar o relatório? Os números serão congelados, os campos ficarão bloqueados e a ação não pode ser desfeita pela interface.")) { render(); return; }
+        report = await App.api("POST", `/api/reports/${REPORT_ID}/finalize`);
+        history.replaceState(null, "", location.pathname);
+        render();
+        App.toast("Relatório finalizado ✓");
+      } finally {
+        btn.disabled = false; btn.textContent = "Finalizar relatório";
+      }
+    }
+    if (btn.id === "reopen") {
+      btn.disabled = true; btn.textContent = "Reabrindo…";
+      try {
+        report = await App.api("POST", `/api/reports/${REPORT_ID}/reopen`);
+        render();
+        App.toast("Relatório reaberto para edição.");
+      } finally { btn.disabled = false; btn.textContent = "Reabrir para edição"; }
+    }
+    if (btn.dataset.suggest) {
+      const field = btn.dataset.suggest;
+      const textarea = form.elements[field];
+      const original = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = btn.dataset.ai === "1" ? "Consultando IA…" : "Carregando…";
+      try {
+        const s = await App.api("POST", `/api/reports/${REPORT_ID}/suggestions`, { field, use_ai: btn.dataset.ai === "1" });
+        if (!s.text) { App.toast(s.warning || "Não há registros para esta seção.", "error"); return; }
+        if (textarea.value.trim() && textarea.value.trim() !== s.text && !confirm("Substituir o texto atual pela sugestão?")) return;
+        textarea.value = s.text;
+        dirty = true;
+        App.toast(s.warning || "Texto inserido. Revise e salve.");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = original;
+      }
+    }
+  } catch (err) {
+    App.toast(err.message, "error");
+  }
+});
+
+form.addEventListener("input", () => (dirty = true));
+form.addEventListener("change", () => (dirty = true));
+window.addEventListener("beforeunload", (e) => { if (dirty) e.preventDefault(); });
+load();
+</script>
+{% endblock %}

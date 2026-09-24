@@ -1,0 +1,16 @@
+# Versões exatas: reprodutível no PC do trabalho, sem lockfile/gerenciador novo.
+# São as versões já instaladas e testadas (100+ testes passando). Para atualizar
+# uma dependência, mude o número aqui e rode a suíte antes de confiar nela.
+fastapi==0.141.1
+uvicorn[standard]==0.53.0
+sqlalchemy==2.0.54
+pydantic==2.13.5
+jinja2==3.1.6
+python-multipart==0.0.32
+python-dotenv==1.2.3
+httpx==0.28.1
+python-docx==1.2.0
+openpyxl==3.1.5
+alembic==1.20.0
+psycopg[binary]==3.3.6
+pytest==9.1.1

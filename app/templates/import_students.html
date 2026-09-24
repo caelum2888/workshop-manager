@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% block title %}Importar dados{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Importar turmas e alunos</h1></div>
+
+<section class="card">
+  <h2>1. Baixe o modelo</h2>
+  <p class="muted small">Cada linha representa um aluno dentro de uma turma. Preencha em uma cópia do modelo e depois envie o arquivo abaixo.</p>
+  <div class="btn-row">
+    <a class="btn" href="/api/imports/students/template.csv">Baixar modelo (.csv)</a>
+    <a class="btn" href="/api/imports/students/template.xlsx">Baixar modelo (.xlsx)</a>
+  </div>
+</section>
+
+<section class="card">
+  <h2>2. Envie o arquivo</h2>
+  <label class="field">
+    <span>Arquivo (.csv ou .xlsx, até 5 MB)</span>
+    <input type="file" id="fileInput" accept=".csv,.xlsx">
+  </label>
+  <div class="btn-row">
+    <button class="btn btn-primary" id="previewBtn" type="button" disabled>Ver prévia</button>
+  </div>
+</section>
+
+<section class="card" id="previewSection" hidden>
+  <h2>3. Prévia</h2>
+  <div id="previewSummary"></div>
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>Linha</th><th>Oficina</th><th>Turma</th><th>Aluno</th><th>Status</th><th>Mensagem</th></tr></thead>
+      <tbody id="previewRows"></tbody>
+    </table>
+  </div>
+  <div class="btn-row" style="margin-top:12px">
+    <button class="btn btn-primary" id="confirmBtn" type="button" hidden>Confirmar importação</button>
+    <button class="btn" id="downloadErrors" type="button" hidden>Baixar linhas com problema (.csv)</button>
+  </div>
+</section>
+
+<section class="card notice-good" id="resultSection" hidden>
+  <h2>Resultado</h2>
+  <div id="resultSummary"></div>
+  <div class="btn-row" style="margin-top:8px">
+    <button class="btn" id="resetBtn" type="button">Importar outro arquivo</button>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const $ = (id) => document.getElementById(id);
+const ADMIN_NAME = {{ current_user.name|tojson }};
+const STATUS_BADGE = { criar: "badge-good", existente: "badge-info", conflito: "badge-warn", erro: "badge-bad" };
+const STATUS_LABEL = { criar: "Criar", existente: "Existente", conflito: "Conflito", erro: "Erro" };
+let currentFile = null;
+let lastPreview = null;
+
+function reset() {
+  currentFile = null;
+  lastPreview = null;
+  $("fileInput").value = "";
+  $("previewBtn").disabled = true;
+  $("previewSection").hidden = true;
+  $("resultSection").hidden = true;
+}
+
+$("fileInput").addEventListener("change", () => {
+  currentFile = $("fileInput").files[0] || null;
+  $("previewBtn").disabled = !currentFile;
+  $("previewSection").hidden = true;
+  $("resultSection").hidden = true;
+});
+
+function summaryHtml(s, { asResult } = {}) {
+  const lines = [
+    `${asResult ? "Criados" : "Será criado"}: ${s.workshops_to_create} oficina(s), ${s.classes_to_create} turma(s), ${s.students_to_create} aluno(s)`,
+    `${asResult ? "Ignorados (já existentes)" : "Já existem"}: ${s.students_existing} aluno(s)`,
+  ];
+  let html = lines.map((l) => `<p>${l}</p>`).join("");
+  if (s.students_conflict) html += `<p class="notice notice-warn">Conflitos: ${s.students_conflict} (mesmo nome em outra turma — exige decisão manual, veja a tabela).</p>`;
+  if (s.errors) html += `<p class="notice notice-bad">Erros: ${s.errors} (corrija a planilha e envie de novo).</p>`;
+  return html;
+}
+
+function renderPreview(data) {
+  lastPreview = data;
+  $("resultSection").hidden = true;
+  $("previewSection").hidden = false;
+  $("previewSummary").innerHTML = `<p><b>${data.total_rows}</b> linha(s) lida(s) de <b>${App.esc(data.filename)}</b></p>` + summaryHtml(data.summary);
+  $("previewRows").innerHTML = data.rows.map((r) => `<tr>
+      <td>${r.row}</td><td>${App.esc(r.oficina)}</td><td>${App.esc(r.turma)}</td><td>${App.esc(r.aluno)}</td>
+      <td><span class="badge ${STATUS_BADGE[r.status] || ""}">${STATUS_LABEL[r.status] || r.status}</span></td>
+      <td class="small">${App.esc(r.message)}</td>
+    </tr>`).join("");
+  $("confirmBtn").hidden = !data.ok_to_import;
+  $("downloadErrors").hidden = !(data.summary.errors || data.summary.students_conflict);
+}
+
+function renderResult(result) {
+  $("previewSection").hidden = true;
+  $("resultSection").hidden = false;
+  $("resultSummary").innerHTML = `<p><b>✓ Importação concluída.</b></p>` + summaryHtml(result.summary, { asResult: true })
+    + `<p class="muted small">Arquivo: ${App.esc(result.filename)} · ${new Date().toLocaleString("pt-BR")} · ${App.esc(ADMIN_NAME)}</p>`;
+}
+
+function csvCell(value) {
+  const s = String(value ?? "");
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+$("previewBtn").addEventListener("click", async () => {
+  if (!currentFile) return;
+  const btn = $("previewBtn");
+  btn.disabled = true;
+  btn.textContent = "Validando…";
+  try {
+    const body = new FormData();
+    body.append("file", currentFile);
+    renderPreview(await App.api("POST", "/api/imports/students/preview", body));
+  } catch (err) {
+    App.toast(err.message, "error");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Ver prévia";
+  }
+});
+
+$("confirmBtn").addEventListener("click", async () => {
+  if (!currentFile) return;
+  const btn = $("confirmBtn");
+  btn.disabled = true;
+  btn.textContent = "Importando…";
+  try {
+    const body = new FormData();
+    body.append("file", currentFile);
+    renderResult(await App.api("POST", "/api/imports/students/confirm", body));
+  } catch (err) {
+    if (err.details && err.details.rows) {
+      renderPreview(err.details);
+      App.toast("A planilha ainda tem pendências. Corrija e envie de novo.", "error");
+    } else {
+      App.toast(err.message, "error");
+    }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Confirmar importação";
+  }
+});
+
+$("downloadErrors").addEventListener("click", () => {
+  const rows = (lastPreview?.rows || []).filter((r) => r.status === "erro" || r.status === "conflito");
+  const header = ["linha", "oficina", "turma", "aluno", "status", "erro"].join(",");
+  const body = rows.map((r) => [r.row, r.oficina, r.turma, r.aluno, r.status, r.message].map(csvCell).join(",")).join("\n");
+  const blob = new Blob([`﻿${header}\n${body}\n`], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "erros-importacao.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+$("resetBtn").addEventListener("click", reset);
+</script>
+{% endblock %}

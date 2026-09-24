@@ -1,0 +1,99 @@
+{% set ident = r.identification %}{% set f = r.fields %}
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Relatório {{ ident.workshop_name }} — {{ r.period.label }}</title>
+  <style>
+    :root { --ink: #111; --muted: #555; --line: #bbb; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #e9ebef; color: var(--ink); font: 11.5pt/1.5 Calibri, "Segoe UI", Arial, sans-serif; }
+    .toolbar { position: sticky; top: 0; display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; padding: 10px 16px; background: #1c2230; }
+    .toolbar a, .toolbar button { font: 600 14px system-ui, sans-serif; padding: 10px 14px; border-radius: 8px; border: 0; background: #fff; color: #1c2230; text-decoration: none; cursor: pointer; }
+    .toolbar button { background: #1f5fbf; color: #fff; }
+    .doc { background: #fff; max-width: 210mm; margin: 16px auto; padding: 18mm 18mm 22mm; box-shadow: 0 2px 12px rgba(0,0,0,.12); }
+    @media (max-width: 800px) { .doc { margin: 0; padding: 20px 16px; } }
+    h1 { font-size: 15pt; margin: 0 0 10px; }
+    h2 { font-size: 12pt; margin: 18px 0 6px; }
+    p { margin: 0 0 6px; }
+    ul { margin: 0 0 6px; padding-left: 20px; }
+    .hint { color: var(--muted); font-style: italic; font-size: 10.5pt; }
+    .months { display: flex; flex-wrap: wrap; gap: 2px 12px; }
+    .text { white-space: pre-wrap; border-bottom: 1px solid var(--line); padding: 4px 0 8px; min-height: 3em; }
+    .opts span { margin-right: 14px; white-space: nowrap; }
+    .draft { max-width: 210mm; margin: 16px auto 0; background: #fcf1d6; color: #6b4600; padding: 10px 14px; font: 600 14px system-ui, sans-serif; border-radius: 8px; text-align: center; }
+    .sign { margin-top: 24px; display: grid; gap: 14px; }
+    .sign-line { display: inline-block; min-width: 260px; border-bottom: 1px solid var(--ink); padding: 0 4px; }
+    @media print {
+      body { background: #fff; }
+      .toolbar { display: none; }
+      .doc { box-shadow: none; margin: 0; max-width: none; padding: 0; }
+      .draft { margin: 0 0 10px; border: 1px solid #6b4600; }
+      @page { size: A4; margin: 16mm; }
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <a href="/relatorios/{{ r.id }}">← Voltar à revisão</a>
+    <a href="/api/reports/{{ r.id }}/export.docx">Baixar DOCX</a>
+    <button onclick="window.print()">Imprimir / Salvar PDF</button>
+  </div>
+  {% if r.status != "final" %}<div class="draft">RASCUNHO — relatório ainda não finalizado</div>{% endif %}
+
+  <article class="doc">
+    <h1>Relatório Mensal de Atividades: Oficinas Itinerantes</h1>
+    <p><b>Mês de Referência:</b></p>
+    <p class="months">{% for m in MONTH_NAMES %}<span>{{ "☒" if loop.index == r.month else "☐" }} {{ m }}</span>{% endfor %}<span>· {{ r.year }}</span></p>
+
+    <h2>1. Identificação:</h2>
+    <ul>
+      <li><b>Professor(a):</b> {{ ident.instructor_name }}</li>
+      <li><b>Oficina/Linguagem:</b> {{ ident.workshop_name }}{% if ident.language %} / {{ ident.language }}{% endif %}</li>
+      <li><b>Local/Comunidade atendida:</b> {{ ident.location }}</li>
+    </ul>
+
+    <h2>2. Resumo das Atividades Realizadas</h2>
+    <p class="hint">Descreva o que foi trabalhado em sala de aula (conforme o previsto no Plano de Aula).</p>
+    <div class="text">{{ f.activities_summary }}</div>
+
+    <h2>3. Dados de Participação</h2>
+    <ul>
+      <li><b>Nº de alunos matriculados:</b> {{ r.participation.enrolled }}</li>
+      <li><b>Média de presença no mês:</b> {{ r.participation.average }}</li>
+      <li><b>Novas matrículas/Desistências:</b> {{ r.participation.changes }}</li>
+    </ul>
+
+    <h2>4. Metodologia Aplicada e Resultados Observados</h2>
+    <p class="hint">A metodologia escolhida funcionou bem neste local? Como os alunos reagiram às propostas?</p>
+    {% for key, item in methodology_labels.items() %}
+    <p>{{ "☒" if f.methodology_rating == key else "☐" }} <b>{{ item[0] }}:</b> {{ item[1] }}</p>
+    {% endfor %}
+    <p><b>Observações:</b></p>
+    <div class="text">{{ f.methodology_notes }}</div>
+
+    <h2>5. Desafios e Logística</h2>
+    <p class="hint">Relate dificuldades com o espaço físico, transporte de materiais ou condições do local neste mês específico.</p>
+    <ul>
+      <li class="opts"><b>Infraestrutura:</b> {% for key, label in infrastructure_labels.items() %}<span>({{ "X" if f.infrastructure == key else " " }}) {{ label }}</span>{% endfor %}</li>
+      <li class="opts"><b>Materiais:</b> {% for key, label in materials_labels.items() %}<span>({{ "X" if f.materials == key else " " }}) {{ label }}</span>{% endfor %}</li>
+      <li><b>Comentários:</b></li>
+    </ul>
+    <div class="text">{{ f.logistics_comments }}</div>
+
+    <h2>6. Destaques e Ocorrências</h2>
+    <p class="hint">(Relate algum caso de sucesso, evolução notável de algum aluno ou qualquer conflito/imprevisto que a coordenação precise saber).</p>
+    <div class="text">{{ f.highlights_occurrences }}</div>
+
+    <h2>7. Planejamento para o Próximo Mês</h2>
+    <p class="hint">Algum material específico ou apoio da coordenação necessário para a próxima etapa?</p>
+    <div class="text">{{ f.next_month_planning }}</div>
+
+    <div class="sign">
+      <p><b>Data:</b> {{ f.report_date|date_br or "____/____/______" }}</p>
+      <p><b>Assinatura do Professor:</b> <span class="sign-line">{{ f.signature_name }}</span></p>
+    </div>
+  </article>
+</body>
+</html>

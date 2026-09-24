@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block title %}Oficinas e turmas{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Oficinas e turmas</h1>
+  <div class="btn-row">
+    <button class="btn btn-primary" id="newWorkshop" type="button">＋ Oficina</button>
+    <button class="btn" id="newClass" type="button">＋ Turma</button>
+  </div>
+</div>
+
+<div id="workshops"></div>
+
+<dialog id="dlgWorkshop">
+  <form id="formWorkshop" method="dialog">
+    <h2>Oficina</h2>
+    <div class="notice notice-bad form-error" role="alert" hidden></div>
+    <label class="field"><span>Nome</span><input type="text" name="name" required placeholder="Ex.: Desenho"></label>
+    <label class="field"><span>Linguagem / categoria</span><input type="text" name="language" placeholder="Ex.: Artes Visuais"></label>
+    <label class="field"><span>Local / comunidade atendida</span><input type="text" name="location"></label>
+    <label class="field"><span>Professor responsável</span><select name="instructor_id" data-type="int" class="instructor-select"></select></label>
+    <label class="check"><input type="checkbox" name="active"> Ativa</label>
+    <div class="btn-row"><button class="btn" type="button" data-close>Cancelar</button><button class="btn btn-primary" type="submit">Salvar</button></div>
+  </form>
+</dialog>
+
+<dialog id="dlgClass">
+  <form id="formClass" method="dialog">
+    <h2>Turma</h2>
+    <div class="notice notice-bad form-error" role="alert" hidden></div>
+    <label class="field"><span>Oficina</span><select name="workshop_id" data-type="int" id="classWorkshop" required></select></label>
+    <label class="field"><span>Nome / identificação</span><input type="text" name="name" required placeholder="Ex.: Desenho — 14h30"></label>
+    <label class="field"><span>Horário <em>opcional</em></span><input type="text" name="schedule" placeholder="Ex.: Terças e quintas, 14h30"></label>
+    <label class="field"><span>Local <em>se diferente da oficina</em></span><input type="text" name="location"></label>
+    <label class="check"><input type="checkbox" name="active"> Ativa</label>
+    <div class="btn-row"><button class="btn" type="button" data-close>Cancelar</button><button class="btn btn-primary" type="submit">Salvar</button></div>
+  </form>
+</dialog>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const $ = (id) => document.getElementById(id);
+let cache = { workshops: [], classes: [], instructors: [] };
+const editing = { dlgWorkshop: null, dlgClass: null };
+
+async function load() {
+  let workshops, classes, instructors;
+  try {
+    [workshops, classes, instructors] = await Promise.all([
+      App.get("/api/workshops"), App.get("/api/classes"), App.get("/api/instructors"),
+    ]);
+  } catch (err) {
+    $("workshops").innerHTML = App.errorState(err.message);
+    return;
+  }
+  cache = { workshops, classes, instructors };
+
+  document.querySelectorAll(".instructor-select").forEach((sel) => {
+    sel.innerHTML = '<option value="">— sem responsável —</option>' + instructors.map((i) => `<option value="${i.id}">${App.esc(i.name)}</option>`).join("");
+  });
+  $("classWorkshop").innerHTML = workshops.map((w) => `<option value="${w.id}">${App.esc(w.name)}</option>`).join("");
+
+  $("workshops").innerHTML = workshops.length ? workshops.map((w) => {
+    const own = classes.filter((c) => c.workshop_id === w.id);
+    return `<section class="card">
+      <div class="card-head">
+        <div>
+          <h2>${App.esc(w.name)} ${w.active ? "" : '<span class="badge">inativa</span>'}</h2>
+          <div class="muted small">${App.esc(w.language || "Sem linguagem")} · ${App.esc(w.location || "Sem local")} · ${App.esc(w.instructor_name || "Sem professor")}</div>
+        </div>
+        <span class="btn-row">
+          <button class="btn btn-sm" data-edit-workshop="${w.id}">Editar</button>
+          <button class="btn btn-sm" data-new-class="${w.id}">＋ Turma</button>
+        </span>
+      </div>
+      <ul class="class-list">
+        ${own.length ? own.map((c) => `<li>
+          <div><b>${App.esc(c.name)}</b> ${c.active ? "" : '<span class="badge">inativa</span>'}
+            <div class="muted small">${App.esc(c.schedule || "Sem horário")} · ${c.active_students} aluno(s) ativo(s)</div></div>
+          <span class="btn-row">
+            <a class="btn btn-sm btn-ghost" href="/aulas/registrar?class_id=${c.id}">Registrar aula</a>
+            <a class="btn btn-sm" href="/alunos?class_id=${c.id}">Alunos</a>
+            <button class="btn btn-sm" data-edit-class="${c.id}">Editar</button>
+          </span></li>`).join("") : '<li class="muted small">Nenhuma turma cadastrada.</li>'}
+      </ul>
+    </section>`;
+  }).join("") : '<section class="card empty">Nenhuma oficina cadastrada ainda.</section>';
+}
+
+function open(dialogId, formId, values, id) {
+  editing[dialogId] = id || null;
+  App.clearFormErrors($(formId));
+  App.fillForm($(formId), values);
+  $(dialogId).showModal();
+}
+
+const SUCCESS_MESSAGES = {
+  dlgWorkshop: { created: "Oficina criada com sucesso.", updated: "Oficina atualizada." },
+  dlgClass: { created: "Turma criada com sucesso.", updated: "Turma atualizada." },
+};
+
+function bindSave(dialogId, formId, url) {
+  $(formId).addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const body = App.formData($(formId));
+    const id = editing[dialogId];
+    const collections = { dlgWorkshop: "workshops", dlgClass: "classes" };
+    const labels = { dlgWorkshop: "a oficina", dlgClass: "a turma" };
+    const previous = id ? cache[collections[dialogId]].find((item) => item.id === id) : null;
+    if (previous?.active && body.active === false &&
+        !confirm(`Desativar ${labels[dialogId]} “${previous.name}”? O histórico será preservado, mas o cadastro deixará de aparecer nos fluxos ativos.`)) return;
+    App.clearFormErrors($(formId));
+    const btn = $(formId).querySelector('[type="submit"]');
+    btn.disabled = true;
+    btn.textContent = "Salvando…";
+    try {
+      if (id) {
+        if (dialogId === "dlgClass") delete body.workshop_id; // turma não muda de oficina
+        await App.api("PATCH", `${url}/${id}`, body);
+      } else {
+        await App.api("POST", url, body);
+      }
+      $(dialogId).close();
+      App.toast(id ? SUCCESS_MESSAGES[dialogId].updated : SUCCESS_MESSAGES[dialogId].created);
+      load();
+    } catch (err) {
+      App.showFormErrors($(formId), err);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Salvar";
+    }
+  });
+}
+
+bindSave("dlgWorkshop", "formWorkshop", "/api/workshops");
+bindSave("dlgClass", "formClass", "/api/classes");
+
+document.addEventListener("click", (e) => {
+  const t = e.target.closest("button");
+  if (!t) return;
+  if (t.hasAttribute("data-close")) t.closest("dialog").close();
+  if (t.dataset.editWorkshop) open("dlgWorkshop", "formWorkshop", cache.workshops.find((w) => w.id == t.dataset.editWorkshop), Number(t.dataset.editWorkshop));
+  if (t.dataset.editClass) {
+    open("dlgClass", "formClass", cache.classes.find((c) => c.id == t.dataset.editClass), Number(t.dataset.editClass));
+    $("classWorkshop").disabled = true;
+  }
+  if (t.dataset.newClass) { open("dlgClass", "formClass", { workshop_id: t.dataset.newClass, active: true }); $("classWorkshop").disabled = false; }
+});
+$("newWorkshop").addEventListener("click", () => open("dlgWorkshop", "formWorkshop", { active: true }));
+$("newClass").addEventListener("click", () => {
+  if (!cache.workshops.length) { App.toast("Cadastre uma oficina primeiro.", "error"); return; }
+  open("dlgClass", "formClass", { workshop_id: cache.workshops[0].id, active: true });
+  $("classWorkshop").disabled = false;
+});
+load();
+</script>
+{% endblock %}

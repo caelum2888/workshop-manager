@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Início{% endblock %} · Oficinas Itinerantes</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎨</text></svg>">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="/">Oficinas<span>Itinerantes</span></a>
+      <nav class="nav" aria-label="Principal">
+        {% set admin_nav_items = [
+          ("home", "/", "Início"),
+          ("registrar", "/aulas/registrar", "Registrar aula"),
+          ("aulas", "/aulas", "Aulas"),
+          ("dashboard", "/dashboard", "Dashboard"),
+          ("alunos", "/alunos", "Alunos"),
+          ("turmas", "/turmas", "Oficinas e turmas"),
+          ("importar", "/importar", "Importar dados"),
+          ("usuarios", "/usuarios", "Usuários"),
+          ("relatorios", "/relatorios", "Relatórios"),
+        ] %}
+        {# Ordem priorizada para o fluxo do professor: registrar > aulas > alunos > relatórios > dashboard. #}
+        {% set professor_nav_items = [
+          ("home", "/", "Início"),
+          ("registrar", "/aulas/registrar", "Registrar aula"),
+          ("aulas", "/aulas", "Aulas"),
+          ("alunos", "/alunos", "Alunos"),
+          ("relatorios", "/relatorios", "Relatórios"),
+          ("dashboard", "/dashboard", "Dashboard"),
+        ] %}
+        {% for key, href, label in (admin_nav_items if current_user.role == 'admin' else professor_nav_items) %}
+        <a href="{{ href }}" class="{{ 'active' if active == key else '' }}">{{ label }}</a>
+        {% endfor %}
+      </nav>
+      <div class="user-menu"><span>{{ current_user.name }}</span><a class="btn btn-sm" href="/senha">Alterar senha</a><form method="post" action="/logout"><button class="btn btn-sm" type="submit">Sair</button></form></div>
+    </div>
+  </header>
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="/static/app.js"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

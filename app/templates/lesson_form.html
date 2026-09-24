@@ -1,0 +1,310 @@
+{% extends "base.html" %}
+{% block title %}Registrar aula{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Registrar aula</h1>
+    <span id="modeBadge" class="badge badge-warn" hidden></span>
+  </div>
+</div>
+
+<section class="card notice-good" id="confirmCard" hidden>
+  <h2>✓ Aula registrada com sucesso</h2>
+  <p id="confirmSummary" class="muted"></p>
+  <div class="btn-row">
+    <a class="btn" href="/">Voltar para minhas turmas</a>
+    <button class="btn btn-primary" type="button" id="registerAnother">Registrar outra aula</button>
+  </div>
+</section>
+
+<section class="card">
+  <div id="pickerSummary" hidden>
+    <p><b id="pickerClassName"></b> <button type="button" class="btn btn-sm btn-ghost" id="changeClass">Trocar turma</button></p>
+  </div>
+  <div class="form-grid three" id="pickerFields">
+    <label class="field" id="workshopField"><span>Oficina</span><select id="workshop"></select></label>
+    <label class="field" id="klassField"><span>Turma</span><select id="klass"></select></label>
+    <label class="field"><span>Data</span><input type="date" id="date"></label>
+  </div>
+  <div id="notice" class="notice" hidden></div>
+</section>
+
+<section class="card" id="rosterCard" hidden>
+  <div class="card-head">
+    <h2 id="rosterTitle">Presença</h2>
+  </div>
+  <p class="muted small attendance-summary" id="counts" aria-live="polite"></p>
+  <ul class="roster" id="roster"></ul>
+</section>
+
+<section class="card" id="textCard" hidden>
+  <label class="field">
+    <span>Resumo da aula <em>obrigatório</em></span>
+    <textarea id="summary" rows="3" placeholder="Ex.: Trabalhamos perspectiva e desenho de observação utilizando objetos presentes na sala."></textarea>
+  </label>
+  <details class="more" id="more">
+    <summary>Ocorrências e mais detalhes (opcional)</summary>
+    <label class="field">
+      <span>Ocorrências</span>
+      <textarea id="occurrences" rows="2" placeholder="Imprevistos, conflitos, falta de material, destaques..."></textarea>
+    </label>
+    <label class="field">
+      <span>Metodologia observada</span>
+      <textarea id="methodology" rows="2" placeholder="Como a turma reagiu à proposta? O que funcionou ou não?"></textarea>
+    </label>
+    <label class="field">
+      <span>Observações</span>
+      <textarea id="notes" rows="2" placeholder="Espaço, materiais, logística..."></textarea>
+    </label>
+  </details>
+</section>
+
+<div class="sticky-actions" id="actions" hidden>
+  <div class="inner">
+    <button class="btn btn-ghost" id="allPresent" type="button" title="Marca todos os alunos desta chamada como presentes">✓ Todos presentes</button>
+    <button class="btn btn-primary btn-lg grow" id="save" type="button">Salvar aula</button>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const $ = (id) => document.getElementById(id);
+const STATUSES = [["presente", "Presente", "P"], ["ausente", "Ausente", "F"], ["atestado", "Atestado", "At"]];
+const IS_ADMIN = {{ 'true' if current_user.role == 'admin' else 'false' }};
+const LAST_CLASS_KEY = "oficinas:lastClassId:{{ current_user.id }}";
+const state = { lesson: null, klass: null, students: [], marks: {}, dirty: false };
+const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+async function init() {
+  const p = App.params();
+  $("date").value = p.get("date") || App.todayISO();
+  const presetFromUrl = p.get("class_id");
+  const classId = presetFromUrl || App.load(LAST_CLASS_KEY);
+  let classes, workshops;
+  try {
+    // Independentes: rodam em paralelo. A pré-seleção é aplicada depois que as duas voltam.
+    [classes, workshops] = await Promise.all([
+      App.get("/api/classes", { active: true }),
+      App.fillWorkshops($("workshop")),
+    ]);
+  } catch (err) {
+    showNotice(`${App.esc(err.message)} <button type="button" class="btn btn-sm" id="retryInit">Tentar novamente</button>`, "bad");
+    $("retryInit").addEventListener("click", init);
+    return;
+  }
+  if (!workshops.length) {
+    showNotice(IS_ADMIN
+      ? 'Nenhuma oficina cadastrada. <a href="/turmas">Cadastre oficinas e turmas</a>.'
+      : "Você ainda não possui turmas atribuídas. Procure a coordenação.", "warn");
+    return;
+  }
+  const current = classes.find((c) => String(c.id) === String(classId));
+  if (current) $("workshop").value = current.workshop_id;
+  await App.fillClasses($("klass"), $("workshop").value, { selected: classId });
+  setPickerCollapsed(Boolean(presetFromUrl));
+  await loadRoster();
+}
+
+function setPickerCollapsed(collapsed) {
+  $("pickerSummary").hidden = !collapsed;
+  $("workshopField").hidden = collapsed;
+  $("klassField").hidden = collapsed;
+}
+
+function showNotice(html, kind) {
+  const n = $("notice");
+  if (!html) { n.hidden = true; return; }
+  n.innerHTML = html;
+  n.className = `notice ${kind ? "notice-" + kind : ""}`;
+  n.hidden = false;
+}
+
+function confirmDiscard() {
+  return !state.dirty || confirm("Há alterações não salvas nesta aula. Deseja descartá-las?");
+}
+
+async function loadRoster() {
+  const classId = $("klass").value;
+  const date = $("date").value;
+  const sections = ["rosterCard", "textCard", "actions"];
+  if (!classId || !date) { sections.forEach((id) => ($(id).hidden = true)); showNotice(classId ? "" : "Esta oficina não tem turmas ativas.", "warn"); return; }
+
+  App.store(LAST_CLASS_KEY, classId);
+  history.replaceState(null, "", `?class_id=${classId}&date=${date}`);
+  $("confirmCard").hidden = true;
+  let data;
+  try {
+    data = await App.get(`/api/classes/${classId}/roster`, { date });
+  } catch (err) {
+    sections.forEach((id) => ($(id).hidden = true));
+    setPickerCollapsed(false); // o preset pode estar inválido/desatualizado; deixa escolher manualmente
+    showNotice(`${App.esc(err.message)} <button type="button" class="btn btn-sm" id="retryRoster">Tentar novamente</button>`, "bad");
+    $("retryRoster").addEventListener("click", loadRoster);
+    return;
+  }
+
+  state.lesson = data.lesson;
+  state.klass = data.class;
+  state.students = data.students;
+  state.marks = Object.fromEntries(data.students.filter((s) => s.attendance_status).map((s) => [s.id, s.attendance_status]));
+  state.dirty = false;
+
+  const l = data.lesson || {};
+  $("summary").value = l.summary || "";
+  $("occurrences").value = l.occurrences || "";
+  $("methodology").value = l.methodology || "";
+  $("notes").value = l.notes || "";
+  $("more").open = Boolean(l.occurrences || l.methodology || l.notes);
+
+  $("pickerClassName").textContent = `${data.class.name} · ${data.class.workshop_name}`;
+  $("rosterTitle").textContent = `${data.class.name} · ${App.fmtDate(date)}`;
+  updateModeBadge();
+  updateNotice();
+  renderRoster();
+  sections.forEach((id) => ($(id).hidden = false));
+}
+
+function updateModeBadge() {
+  const badge = $("modeBadge");
+  if (state.lesson) {
+    badge.hidden = false;
+    badge.textContent = `Editando aula de ${App.fmtDate($("date").value)}`;
+  } else {
+    badge.hidden = true;
+  }
+}
+
+function updateNotice() {
+  if ($("date").value > App.todayISO()) {
+    showNotice("Atenção: a data selecionada está no futuro.", "warn");
+  } else {
+    showNotice("");
+  }
+}
+
+function renderRoster() {
+  const ul = $("roster");
+  if (!state.students.length) {
+    ul.innerHTML = `<li class="empty">Nenhum aluno matriculado nesta turma nesta data.<br><a href="/alunos?class_id=${state.klass.id}">Cadastrar alunos</a></li>`;
+  } else {
+    ul.innerHTML = state.students.map((s) => `
+      <li class="student-row ${state.marks[s.id] ? "" : "unmarked"}" data-id="${s.id}">
+        <span class="student-name">${App.esc(s.name)}</span>
+        <div class="seg" role="radiogroup" aria-label="Presença de ${App.esc(s.name)}">
+          ${STATUSES.map(([value, label, short]) => {
+            const on = state.marks[s.id] === value;
+            return `<button type="button" class="seg-btn seg-${value} ${on ? "on" : ""}" data-status="${value}" role="radio" aria-checked="${on}">
+              <span class="seg-label-full">${label}</span><span class="seg-label-short">${short}</span>
+            </button>`;
+          }).join("")}
+        </div>
+      </li>`).join("");
+  }
+  updateCounts();
+}
+
+function updateCounts() {
+  const c = { presente: 0, ausente: 0, atestado: 0 };
+  Object.values(state.marks).forEach((s) => c[s]++);
+  const unmarked = state.students.length - Object.keys(state.marks).length;
+  $("counts").innerHTML = `${plural(state.students.length, "aluno")} · <b>${plural(c.presente, "presente")}</b> · ${plural(c.ausente, "ausente")} · ${plural(c.atestado, "atestado")}` +
+    (unmarked ? ` · <strong class="unmarked-count">⚠ Pendente: ${unmarked}</strong>` : ' · <strong class="complete-count">✓ chamada completa</strong>');
+}
+
+$("roster").addEventListener("click", (e) => {
+  const btn = e.target.closest(".seg-btn");
+  if (!btn) return;
+  const row = btn.closest(".student-row");
+  state.marks[Number(row.dataset.id)] = btn.dataset.status;
+  state.dirty = true;
+  row.classList.remove("unmarked");
+  row.querySelectorAll(".seg-btn").forEach((b) => {
+    const on = b === btn;
+    b.classList.toggle("on", on);
+    b.setAttribute("aria-checked", on);
+  });
+  updateCounts();
+});
+
+$("allPresent").addEventListener("click", () => {
+  state.students.forEach((s) => { state.marks[s.id] = "presente"; });
+  state.dirty = true;
+  renderRoster();
+});
+
+["summary", "occurrences", "methodology", "notes"].forEach((id) => $(id).addEventListener("input", () => (state.dirty = true)));
+
+$("changeClass").addEventListener("click", () => setPickerCollapsed(false));
+
+$("workshop").addEventListener("change", async () => {
+  if (!confirmDiscard()) return;
+  await App.fillClasses($("klass"), $("workshop").value);
+  loadRoster();
+});
+$("klass").addEventListener("change", () => { if (confirmDiscard()) loadRoster(); });
+$("date").addEventListener("change", () => { if (confirmDiscard()) loadRoster(); });
+window.addEventListener("beforeunload", (e) => { if (state.dirty) e.preventDefault(); });
+
+$("registerAnother").addEventListener("click", () => {
+  $("confirmCard").hidden = true;
+  setPickerCollapsed(false);
+  $("workshop").focus();
+});
+
+$("save").addEventListener("click", async () => {
+  const unmarked = state.students.filter((s) => !state.marks[s.id]);
+  if (unmarked.length) {
+    App.toast(`Ainda ${unmarked.length === 1 ? "falta 1 aluno" : `faltam ${unmarked.length} alunos`} para marcar.`, "error");
+    const firstUnmarked = document.querySelector(".student-row.unmarked");
+    firstUnmarked?.scrollIntoView({ behavior: "smooth", block: "center" });
+    firstUnmarked?.querySelector(".seg-btn")?.focus();
+    return;
+  }
+  const summary = $("summary").value.trim();
+  if (!summary) {
+    App.toast("Escreva um pequeno resumo da aula.", "error");
+    $("summary").focus();
+    $("summary").scrollIntoView({ behavior: "smooth", block: "center" });
+    return;
+  }
+  const payload = {
+    summary,
+    occurrences: $("occurrences").value,
+    methodology: $("methodology").value,
+    notes: $("notes").value,
+    attendance: state.students.map((s) => ({ student_id: s.id, status: state.marks[s.id] })),
+  };
+  const btn = $("save");
+  btn.disabled = true;
+  btn.textContent = "Salvando…";
+  try {
+    const saved = state.lesson
+      ? await App.api("PATCH", `/api/lessons/${state.lesson.id}`, payload)
+      : await App.api("POST", "/api/lessons", { ...payload, class_id: Number($("klass").value), date: $("date").value });
+    state.lesson = saved;
+    state.dirty = false;
+    updateModeBadge();
+    const c = saved.attendance_counts;
+    $("confirmSummary").textContent = `${state.klass.name} · ${App.fmtDate(saved.date)} — `
+      + `${plural(c.present, "presente")}, ${plural(c.absent, "ausente")}, ${plural(c.excused, "atestado")}.`;
+    $("confirmCard").hidden = false;
+    $("confirmCard").scrollIntoView({ behavior: "smooth", block: "start" });
+    App.toast(`Aula registrada ✓ ${plural(c.present, "presente")}, ${plural(c.absent, "ausente")}, ${plural(c.excused, "atestado")}.`);
+  } catch (err) {
+    if (err.status === 409) {
+      App.toast("Já existe aula nesta data. Carregando o registro existente.", "error");
+      state.dirty = false;
+      await loadRoster();
+    } else {
+      App.toast(err.message, "error");
+    }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Salvar aula";
+  }
+});
+
+init();
+</script>
+{% endblock %}

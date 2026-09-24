@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}Usuários{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Usuários e professores</h1><button class="btn btn-primary" id="newUser">＋ Usuário</button></div>
+<section class="card"><div id="users"></div></section>
+
+<section class="card" id="orphansSection" hidden>
+  <div class="card-head"><h2>Professores sem acesso ao sistema</h2></div>
+  <p class="muted small">Cadastros de professor antigos, sem conta de login vinculada. Não foram apagados; use "Vincular a uma conta" para criar o acesso sem duplicar o cadastro.</p>
+  <ul class="class-list" id="orphans"></ul>
+</section>
+
+<dialog id="dlgUser">
+  <form id="userForm" method="dialog">
+    <h2 id="userTitle">Novo usuário</h2>
+    <div class="notice notice-bad form-error" role="alert" hidden></div>
+    <label class="field"><span>Nome</span><input name="name" required maxlength="160"></label>
+    <label class="field"><span>E-mail</span><input name="email" type="email" required></label>
+    <label class="field"><span>Perfil</span><select name="role" id="role"><option value="professor">Professor</option><option value="admin">Admin / Coordenação</option></select></label>
+    <label class="field"><span id="passwordLabel">Senha inicial</span><input name="password" type="password" minlength="8" autocomplete="new-password"></label>
+    <fieldset id="workshopField"><legend>Oficinas atribuídas</legend><div id="workshopChecks" class="check-list"></div></fieldset>
+    <label class="check"><input name="active" type="checkbox" checked> Usuário ativo</label>
+    <p class="muted small" id="linkNotice" hidden>Vinculando ao cadastro de professor existente — não cria um novo.</p>
+    <div class="btn-row"><button class="btn" type="button" id="cancelUser">Cancelar</button><button class="btn btn-primary" type="submit">Salvar</button></div>
+  </form>
+</dialog>
+{% endblock %}
+{% block scripts %}
+<script>
+const $ = (id) => document.getElementById(id);
+let users = [], workshops = [], instructors = [], editingId = null, linkInstructorId = null;
+
+async function load() {
+  try {
+    [users, workshops, instructors] = await Promise.all([App.get("/api/users"), App.get("/api/workshops"), App.get("/api/instructors")]);
+  } catch (err) {
+    $("users").innerHTML = App.errorState(err.message);
+    return;
+  }
+  $("users").innerHTML = users.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Oficinas</th><th>Situação</th><th></th></tr></thead><tbody>${users.map((u) => `<tr><td><b>${App.esc(u.name)}</b></td><td>${App.esc(u.email)}</td><td>${u.role === "admin" ? "Admin" : "Professor"}</td><td>${u.workshop_names.map(App.esc).join(", ") || "—"}</td><td>${u.active ? '<span class="badge badge-good">Ativo</span>' : '<span class="badge">Inativo</span>'}</td><td><button class="btn btn-sm" data-edit="${u.id}">Editar</button></td></tr>`).join("")}</tbody></table></div>` : '<div class="empty">Nenhum usuário.</div>';
+
+  const orphans = instructors.filter((i) => !i.has_user);
+  $("orphansSection").hidden = orphans.length === 0;
+  $("orphans").innerHTML = orphans.map((i) => `<li>
+      <div><b>${App.esc(i.name)}</b> ${i.active ? "" : '<span class="badge">inativo</span>'}<div class="muted small">${App.esc(i.email || "sem e-mail cadastrado")}</div></div>
+      <button class="btn btn-sm" data-link-instructor="${i.id}">Vincular a uma conta</button></li>`).join("");
+}
+
+function syncRole() { $("workshopField").hidden = $("role").value !== "professor"; }
+function openUser(user, linkFrom) {
+  editingId = user?.id || null;
+  linkInstructorId = linkFrom?.id || null;
+  $("userTitle").textContent = user ? "Editar usuário" : "Novo usuário";
+  $("passwordLabel").textContent = user ? "Nova senha (deixe vazia para manter)" : "Senha inicial";
+  $("linkNotice").hidden = !linkFrom;
+  App.clearFormErrors($("userForm"));
+  App.fillForm($("userForm"), user || (linkFrom
+    ? { role: "professor", active: linkFrom.active, name: linkFrom.name, email: linkFrom.email || "" }
+    : { role: "professor", active: true }));
+  $("userForm").elements.role.disabled = Boolean(user) || Boolean(linkFrom);
+  $("userForm").elements.password.required = !user;
+  $("workshopChecks").innerHTML = workshops.map((w) => `<label class="check"><input type="checkbox" value="${w.id}" ${user?.workshop_ids.includes(w.id) ? "checked" : ""}> ${App.esc(w.name)}</label>`).join("") || '<span class="muted small">Nenhuma oficina cadastrada.</span>';
+  syncRole(); $("dlgUser").showModal();
+}
+
+$("userForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const body = App.formData($("userForm"));
+  body.workshop_ids = [...$("workshopChecks").querySelectorAll("input:checked")].map((input) => Number(input.value));
+  const role = editingId ? users.find((u) => u.id === editingId)?.role : body.role;
+  if (editingId) delete body.role;
+  if (!body.password) delete body.password;
+  if (!editingId && linkInstructorId) body.link_instructor_id = linkInstructorId;
+  const previous = users.find((user) => user.id === editingId);
+  if (previous?.active && body.active === false &&
+      !confirm(`Desativar o acesso de ${previous.name}? A pessoa não conseguirá mais entrar no sistema; o histórico dela será preservado.`)) return;
+  App.clearFormErrors($("userForm"));
+  const btn = $("userForm").querySelector('[type="submit"]');
+  btn.disabled = true;
+  btn.textContent = "Salvando…";
+  try {
+    if (editingId) await App.api("PATCH", `/api/users/${editingId}`, body);
+    else await App.api("POST", "/api/users", body);
+    $("dlgUser").close();
+    const roleLabel = role === "admin" ? "Administrador" : "Professor";
+    App.toast(editingId ? `${roleLabel} atualizado.` : `${roleLabel} cadastrado.`);
+    load();
+  } catch (err) {
+    App.showFormErrors($("userForm"), err);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Salvar";
+  }
+});
+$("newUser").addEventListener("click", () => openUser(null));
+$("cancelUser").addEventListener("click", () => $("dlgUser").close());
+$("role").addEventListener("change", syncRole);
+$("users").addEventListener("click", (e) => { const btn = e.target.closest("[data-edit]"); if (btn) openUser(users.find((u) => u.id === Number(btn.dataset.edit))); });
+$("orphans").addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-link-instructor]");
+  if (btn) openUser(null, instructors.find((i) => i.id === Number(btn.dataset.linkInstructor)));
+});
+load();
+</script>
+{% endblock %}

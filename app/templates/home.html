@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Início{% endblock %}
+{% macro pct(v) %}{% if v is none %}—{% else %}{{ ("%.1f"|format(v))|replace(".", ",") }}%{% endif %}{% endmacro %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>{% if current_user.role == 'professor' %}Olá, {{ current_user.name }}{% else %}Gestão de Oficinas{% endif %}</h1>
+    <p class="muted">Hoje é {{ today|date_br }}</p>
+  </div>
+</div>
+
+{% if current_user.role == 'professor' %}
+<section class="card">
+  <h2>Minhas turmas</h2>
+  {% if my_classes %}
+  <ul class="class-list">
+    {% for c in my_classes %}
+    <li>
+      <div><b>{{ c.name }}</b><div class="muted small">{{ c.workshop_name }}{% if c.schedule %} · {{ c.schedule }}{% endif %}</div></div>
+      <a class="btn btn-primary" href="/aulas/registrar?class_id={{ c.id }}">Registrar aula</a>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <div class="empty">Você ainda não possui turmas atribuídas. Procure a coordenação.</div>
+  {% endif %}
+</section>
+{% else %}
+<a class="btn btn-primary btn-lg btn-block hero-cta" href="/aulas/registrar">＋ Registrar aula</a>
+{% endif %}
+
+<div class="tiles">
+  <a class="tile" href="/dashboard"><strong>Dashboard</strong><span>Indicadores do mês</span></a>
+  <a class="tile" href="/aulas"><strong>Aulas</strong><span>Histórico e edição</span></a>
+  <a class="tile" href="/alunos"><strong>Alunos</strong><span>{{ 'Alunos das minhas turmas' if current_user.role == 'professor' else 'Matrículas e desistências' }}</span></a>
+  {% if current_user.role == 'admin' %}<a class="tile" href="/turmas"><strong>Oficinas e turmas</strong><span>Cadastros</span></a>{% endif %}
+  <a class="tile" href="/relatorios"><strong>Relatórios</strong><span>Relatório mensal</span></a>
+</div>
+
+<h2>{{ summary.period.label }} · {{ 'minhas oficinas' if current_user.role == 'professor' else 'todas as oficinas' }}</h2>
+<div class="kpis">
+  <div class="kpi"><div class="kpi-label">Aulas registradas</div><div class="kpi-value">{{ summary.lessons_count }}</div></div>
+  <div class="kpi"><div class="kpi-label">Alunos ativos</div><div class="kpi-value">{{ summary.active_students }}</div><div class="kpi-sub">{{ summary.enrolled_students }} matriculados no mês</div></div>
+  <div class="kpi"><div class="kpi-label">Presença média</div><div class="kpi-value">{{ pct(summary.attendance_rate_percent) }}</div><div class="kpi-sub">{{ summary.total_present }} presenças</div></div>
+  <div class="kpi"><div class="kpi-label">Matrículas / desistências</div><div class="kpi-value">{{ summary.new_enrollments }} / {{ summary.dropouts }}</div></div>
+</div>
+{% endblock %}

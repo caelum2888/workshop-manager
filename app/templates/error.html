@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} · Oficinas Itinerantes</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body class="login-body">
+  <main class="login-shell">
+    <section class="login-card" style="text-align:center">
+      <div class="login-brand">Oficinas<span>Itinerantes</span></div>
+      <h1>{{ title }}</h1>
+      <p class="muted">{{ message }}</p>
+      {% if incident_code %}<p class="small muted">Código: {{ incident_code }}</p>{% endif %}
+      <a class="btn btn-primary" href="/">Voltar ao início</a>
+    </section>
+  </main>
+</body>
+</html>

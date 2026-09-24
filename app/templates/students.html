@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% block title %}Alunos{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Alunos</h1>
+  {% if current_user.role == 'admin' %}<button class="btn btn-primary" id="newStudent" type="button">＋ Novo aluno</button>{% endif %}
+</div>
+
+<section class="card">
+  <div class="filters">
+    <label class="field"><span>Oficina</span><select id="workshop"></select></label>
+    <label class="field"><span>Turma</span><select id="klass"></select></label>
+    <label class="field"><span>Situação</span>
+      <select id="status"><option value="">Todas</option><option value="ativo" selected>Ativos</option><option value="desistente">Desistentes</option></select>
+    </label>
+    <label class="field"><span>Buscar</span><input type="search" id="q" placeholder="Nome do aluno"></label>
+  </div>
+</section>
+
+<section class="card">
+  <p class="muted small" id="total"></p>
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>Nome</th><th>Turma</th><th>Situação</th><th class="hide-mobile">Matrícula</th><th class="hide-mobile">Desistência</th><th></th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+</section>
+
+<dialog id="dlg">
+  <form id="form" method="dialog">
+    <h2 id="dlgTitle">Aluno</h2>
+    <div class="notice notice-bad form-error" role="alert" hidden></div>
+    <label class="field"><span>Nome completo</span><input type="text" name="name" required maxlength="160"></label>
+    <label class="field"><span>Turma</span><select name="class_id" data-type="int" id="formClass" required></select></label>
+    <div class="form-grid two">
+      <label class="field"><span>Data de matrícula</span><input type="date" name="enrollment_date" required></label>
+      <label class="field"><span>Situação</span>
+        <select name="status" id="formStatus"><option value="ativo">Ativo</option><option value="desistente">Desistente</option></select>
+      </label>
+    </div>
+    <label class="field" id="dropoutField"><span>Data de desistência</span><input type="date" name="dropout_date"></label>
+    <div class="btn-row">
+      <button class="btn" type="button" id="cancel">Cancelar</button>
+      <button class="btn btn-primary" type="submit">Salvar</button>
+    </div>
+  </form>
+</dialog>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const $ = (id) => document.getElementById(id);
+let students = [];
+let editingId = null;
+const IS_ADMIN = {{ 'true' if current_user.role == 'admin' else 'false' }};
+
+async function init() {
+  const p = App.params();
+  const classes = await App.get("/api/classes");
+  const preset = classes.find((c) => String(c.id) === p.get("class_id"));
+  await App.fillWorkshops($("workshop"), { allLabel: "Todas", selected: preset && preset.workshop_id, activeOnly: false });
+  await App.fillClasses($("klass"), $("workshop").value, { allLabel: "Todas", selected: p.get("class_id"), activeOnly: false });
+  $("formClass").innerHTML = classes.map((c) => `<option value="${c.id}">${App.esc(c.workshop_name)} · ${App.esc(c.name)}</option>`).join("");
+  load();
+}
+
+function hasActiveFilters() {
+  return Boolean($("workshop").value || $("klass").value || $("status").value !== "ativo" || $("q").value.trim());
+}
+
+async function load() {
+  try {
+    students = await App.get("/api/students", { workshop_id: $("workshop").value, class_id: $("klass").value, status: $("status").value, q: $("q").value.trim() });
+  } catch (err) {
+    $("total").textContent = "";
+    $("rows").innerHTML = `<tr><td colspan="6">${App.errorState(err.message)}</td></tr>`;
+    return;
+  }
+  $("total").textContent = `${students.length} aluno(s)`;
+  if (!students.length) {
+    const message = hasActiveFilters() ? "Não há alunos ativos neste filtro." : "Nenhum aluno encontrado.";
+    $("rows").innerHTML = `<tr><td colspan="6" class="empty">${message}</td></tr>`;
+    return;
+  }
+  $("rows").innerHTML = students.map((s) => `<tr>
+      <td><b>${App.esc(s.name)}</b></td>
+      <td class="small">${App.esc(s.class_name)}</td>
+      <td>${s.status === "ativo" ? '<span class="badge badge-good">Ativo</span>' : '<span class="badge">Desistente</span>'}</td>
+      <td class="hide-mobile">${App.fmtDate(s.enrollment_date)}</td>
+      <td class="hide-mobile">${App.fmtDate(s.dropout_date) || "—"}</td>
+      <td class="num">${IS_ADMIN ? `<button class="btn btn-sm" data-edit="${s.id}">Editar</button>` : ""}</td>
+    </tr>`).join("");
+}
+
+function syncDropoutField() {
+  const dropped = $("formStatus").value === "desistente";
+  $("dropoutField").hidden = !dropped;
+  const input = $("form").elements.dropout_date;
+  if (dropped && !input.value) input.value = App.todayISO();
+}
+
+function openDialog(student) {
+  editingId = student ? student.id : null;
+  $("dlgTitle").textContent = student ? "Editar aluno" : "Novo aluno";
+  App.clearFormErrors($("form"));
+  App.fillForm($("form"), student || {
+    name: "", class_id: $("klass").value || $("formClass").value, enrollment_date: App.todayISO(), status: "ativo", dropout_date: "",
+  });
+  syncDropoutField();
+  $("dlg").showModal();
+}
+
+function successMessage(previous, body) {
+  if (!previous) return "Aluno cadastrado.";
+  if (previous.class_id !== body.class_id) {
+    const className = $("formClass").querySelector(`option[value="${body.class_id}"]`)?.textContent.trim();
+    return `Aluno transferido para a turma ${className || "selecionada"}.`;
+  }
+  if (previous.status === "ativo" && body.status === "desistente") return "Desistência registrada.";
+  if (previous.status === "desistente" && body.status === "ativo") return "Aluno reativado.";
+  return "Aluno atualizado.";
+}
+
+$("form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const body = App.formData($("form"));
+  if (body.status === "ativo") body.dropout_date = null;
+  const previous = editingId ? students.find((student) => student.id === editingId) : null;
+  if (previous?.status === "ativo" && body.status === "desistente" &&
+      !confirm(`Registrar a desistência de ${previous.name} em ${App.fmtDate(body.dropout_date)}? A data limitará as aulas e métricas futuras deste aluno.`)) return;
+  App.clearFormErrors($("form"));
+  const btn = $("form").querySelector('[type="submit"]');
+  btn.disabled = true;
+  btn.textContent = "Salvando…";
+  try {
+    if (editingId) await App.api("PATCH", `/api/students/${editingId}`, body);
+    else await App.api("POST", "/api/students", body);
+    $("dlg").close();
+    App.toast(successMessage(previous, body));
+    load();
+  } catch (err) {
+    App.showFormErrors($("form"), err);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Salvar";
+  }
+});
+
+$("rows").addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-edit]");
+  if (btn) openDialog(students.find((s) => s.id === Number(btn.dataset.edit)));
+});
+$("newStudent")?.addEventListener("click", () => openDialog(null));
+$("cancel").addEventListener("click", () => $("dlg").close());
+$("formStatus").addEventListener("change", syncDropoutField);
+$("workshop").addEventListener("change", async () => {
+  await App.fillClasses($("klass"), $("workshop").value, { allLabel: "Todas", activeOnly: false });
+  load();
+});
+["klass", "status"].forEach((id) => $(id).addEventListener("change", load));
+let searchTimer;
+$("q").addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(load, 250); });
+init();
+</script>
+{% endblock %}

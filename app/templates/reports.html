@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Relatórios{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Relatório mensal</h1></div>
+
+<section class="card">
+  <h2>Gerar relatório</h2>
+  <p class="muted small">O sistema monta um rascunho com os números calculados e os registros das aulas do mês. Você revisa e completa tudo antes de finalizar.</p>
+  <div class="form-grid three">
+    <label class="field"><span>Oficina</span><select id="workshop"></select></label>
+    <label class="field"><span>Mês</span><select id="month"></select></label>
+    <label class="field"><span>Ano</span><select id="year"></select></label>
+  </div>
+  <label class="check" id="aiRow"><input type="checkbox" id="useAi"> <span>Usar IA para redigir os textos consolidados <span class="muted small" id="aiNote"></span></span></label>
+  <div class="btn-row" style="margin-top:8px"><button class="btn btn-primary btn-lg" id="generate" type="button">Gerar / abrir rascunho</button></div>
+</section>
+
+<section class="card">
+  <h2>Relatórios existentes</h2>
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>Mês</th><th>Oficina</th><th>Situação</th><th class="hide-mobile">Atualizado</th><th></th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const $ = (id) => document.getElementById(id);
+
+async function init() {
+  const now = new Date();
+  // Padrão: mês anterior (o relatório costuma ser feito no fechamento).
+  const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  App.fillMonthYear($("month"), $("year"), prev.getMonth() + 1, prev.getFullYear());
+  try {
+    await App.fillWorkshops($("workshop"));
+    const status = await App.get("/api/status");
+    if (!status.ai_configured) {
+      $("useAi").disabled = true;
+      $("aiNote").textContent = "(não configurada: serão usados os registros originais)";
+    }
+  } catch (err) {
+    $("rows").innerHTML = `<tr><td colspan="5">${App.errorState(err.message, "init")}</td></tr>`;
+    return;
+  }
+  load();
+}
+
+async function load() {
+  let reports;
+  try {
+    reports = await App.get("/api/reports");
+  } catch (err) {
+    $("rows").innerHTML = `<tr><td colspan="5">${App.errorState(err.message)}</td></tr>`;
+    return;
+  }
+  $("rows").innerHTML = reports.length ? reports.map((r) => `<tr>
+      <td><b>${r.period.label}</b></td>
+      <td>${App.esc(r.workshop_name)}</td>
+      <td>${r.status === "final" ? '<span class="badge badge-good">✓ Final</span>' : '<span class="badge badge-warn">Rascunho</span>'}</td>
+      <td class="small hide-mobile">${App.fmtDate(r.updated_at)}</td>
+      <td class="num"><a class="btn btn-sm" href="/relatorios/${r.id}">${r.status === "final" ? "Abrir" : "Revisar"}</a></td>
+    </tr>`).join("")
+    : '<tr><td colspan="5" class="empty">Nenhum relatório gerado ainda.</td></tr>';
+}
+
+$("generate").addEventListener("click", async () => {
+  const btn = $("generate");
+  if (!$("workshop").value) { App.toast("Cadastre uma oficina primeiro.", "error"); return; }
+  btn.disabled = true;
+  btn.textContent = $("useAi").checked ? "Gerando com IA…" : "Gerando…";
+  try {
+    const r = await App.api("POST", "/api/reports/generate", {
+      workshop_id: Number($("workshop").value), year: Number($("year").value), month: Number($("month").value), use_ai: $("useAi").checked,
+    });
+    location.href = `/relatorios/${r.id}${r.created ? "?novo=1" : ""}`;
+  } catch (err) {
+    App.toast(err.message, "error");
+    btn.disabled = false;
+    btn.textContent = "Gerar / abrir rascunho";
+  }
+});
+init();
+</script>
+{% endblock %}

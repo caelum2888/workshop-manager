@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Entrar · Oficinas Itinerantes</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body class="login-body">
+  <main class="login-shell">
+    <section class="login-card">
+      <div class="login-brand">Oficinas<span>Itinerantes</span></div>
+      <h1>Entrar</h1>
+      <p class="muted">Acesse suas oficinas e turmas.</p>
+      {% if error %}<div class="notice notice-bad" role="alert">{{ error }}</div>{% endif %}
+      <form method="post" action="/login" class="login-form">
+        <input type="hidden" name="next" value="{{ next or '/' }}">
+        <label class="field"><span>E-mail</span><input type="email" name="email" value="{{ email or '' }}" autocomplete="username" required autofocus></label>
+        <label class="field"><span>Senha</span><input type="password" name="password" autocomplete="current-password" required></label>
+        <button class="btn btn-primary btn-lg btn-block" type="submit">Entrar</button>
+      </form>
+    </section>
+  </main>
+</body>
+</html>
+

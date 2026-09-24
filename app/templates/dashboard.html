@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Dashboard mensal</h1><span class="muted small" id="scopeLabel"></span></div>
+
+<section class="card">
+  <div class="filters">
+    <label class="field"><span>Mês</span><select id="month"></select></label>
+    <label class="field"><span>Ano</span><select id="year"></select></label>
+    <label class="field"><span>Oficina</span><select id="workshop"></select></label>
+    <label class="field"><span>Turma</span><select id="klass"></select></label>
+  </div>
+</section>
+
+<div class="kpis" id="kpis"></div>
+
+<section class="card" id="lowestCard">
+  <div class="card-head"><h2>Menor frequência no mês</h2></div>
+  <div id="lowest"></div>
+</section>
+
+<section class="card">
+  <div class="card-head">
+    <h2>Frequência individual</h2>
+    <label class="check small"><input type="checkbox" id="sortFreq"> Ordenar pela frequência</label>
+  </div>
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr><th>Aluno</th><th>Turma</th><th class="num">Aulas</th><th class="num">Presenças</th><th class="num">Faltas</th><th class="num">Atestados</th><th>Frequência</th></tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+  <p class="muted small" style="margin-top:10px">Frequência = presenças ÷ aulas com registro do aluno no mês. Atestados contam como não presença, mas aparecem separados.</p>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const $ = (id) => document.getElementById(id);
+const LOW = 75;
+let data = null;
+
+async function init() {
+  const p = App.params();
+  App.fillMonthYear($("month"), $("year"), p.get("month"), p.get("year"));
+  await App.fillWorkshops($("workshop"), { allLabel: "Todas", selected: p.get("workshop_id"), activeOnly: false });
+  await App.fillClasses($("klass"), $("workshop").value, { allLabel: "Todas", selected: p.get("class_id"), activeOnly: false });
+  load();
+}
+
+function kpi(label, value, sub = "") {
+  return `<div class="kpi"><div class="kpi-label">${label}</div><div class="kpi-value">${value}</div>${sub ? `<div class="kpi-sub">${sub}</div>` : ""}</div>`;
+}
+
+async function load() {
+  const params = { year: $("year").value, month: $("month").value, workshop_id: $("workshop").value, class_id: $("klass").value };
+  history.replaceState(null, "", App.qs(params));
+  try {
+    data = await App.get("/api/metrics/monthly", params);
+  } catch (err) { App.toast(err.message, "error"); return; }
+
+  const s = data.scope;
+  $("scopeLabel").textContent = `${data.period.label} · ${s.class_name || s.workshop_name || "Todas as oficinas"}`;
+  $("kpis").innerHTML = [
+    kpi("Matriculados no mês", data.enrolled_students, "matrícula ativa em algum dia do mês"),
+    kpi("Alunos ativos", data.active_students, "no fim do mês"),
+    kpi("Novas matrículas", data.new_enrollments, data.new_enrollment_list.map((x) => App.esc(x.name)).join(", ")),
+    kpi("Desistências", data.dropouts, data.dropout_list.map((x) => App.esc(x.name)).join(", ")),
+    kpi("Aulas realizadas", data.lessons_count),
+    kpi("Frequência média", App.pct(data.attendance_rate_percent), `${data.total_present} presenças ÷ ${data.total_attendance_records} marcações válidas`),
+    kpi("Presenças / faltas", `${data.total_present} / ${data.total_absent}`, `${data.total_excused} atestado(s)`),
+    kpi("Média por aula", data.average_present_per_lesson == null ? "—" : App.fmtNum(data.average_present_per_lesson), "alunos presentes por aula"),
+  ].join("");
+
+  $("lowest").innerHTML = data.lowest_frequency.length
+    ? `<ul class="readonly-list">${data.lowest_frequency.map((r) => `<li>${bar(r)} <b>${App.esc(r.name)}</b> <span class="muted small">· ${App.esc(r.class_name)} · ${r.absent} falta(s), ${r.excused} atestado(s)</span></li>`).join("")}</ul>`
+    : '<div class="empty">Sem registros de presença no período.</div>';
+  renderRows();
+}
+
+function bar(r) {
+  const v = r.frequency_percent;
+  if (v == null) return '<span class="muted">—</span>';
+  const flag = v < LOW ? `<span class="flag">⚠ abaixo de ${LOW}%</span>` : "";
+  return `<span class="bar-cell"><span class="bar" aria-hidden="true"><i style="width:${v}%"></i></span><span class="bar-value">${App.pct(v)}</span>${flag}</span>`;
+}
+
+function renderRows() {
+  if (!data) return;
+  const rows = [...data.student_frequency];
+  if ($("sortFreq").checked) rows.sort((a, b) => (a.frequency_percent ?? 101) - (b.frequency_percent ?? 101));
+  $("rows").innerHTML = rows.length ? rows.map((r) => `<tr>
+      <td>${App.esc(r.name)} ${r.status === "desistente" ? '<span class="badge">desistente</span>' : ""}</td>
+      <td class="small">${App.esc(r.class_name)}</td>
+      <td class="num">${r.lessons_recorded}${r.unmarked_lessons ? ` <span class="flag" title="Aulas elegíveis sem marcação">⚠/${r.eligible_lessons}</span>` : ""}</td><td class="num">${r.present}</td><td class="num">${r.absent}</td><td class="num">${r.excused}</td>
+      <td>${bar(r)}</td></tr>`).join("")
+    : '<tr><td colspan="7" class="empty">Nenhum aluno no período.</td></tr>';
+}
+
+$("workshop").addEventListener("change", async () => {
+  await App.fillClasses($("klass"), $("workshop").value, { allLabel: "Todas", activeOnly: false });
+  load();
+});
+["month", "year", "klass"].forEach((id) => $(id).addEventListener("change", load));
+$("sortFreq").addEventListener("change", renderRows);
+init();
+</script>
+{% endblock %}

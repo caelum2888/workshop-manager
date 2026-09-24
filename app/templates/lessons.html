@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Aulas{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Aulas registradas</h1>
+  <a class="btn btn-primary" href="/aulas/registrar">＋ Registrar aula</a>
+</div>
+
+<section class="card">
+  <div class="filters">
+    <label class="field"><span>Mês</span><select id="month"></select></label>
+    <label class="field"><span>Ano</span><select id="year"></select></label>
+    <label class="field"><span>Oficina</span><select id="workshop"></select></label>
+    <label class="field"><span>Turma</span><select id="klass"></select></label>
+  </div>
+</section>
+
+<section class="card">
+  <p class="muted small" id="total"></p>
+  <div id="list"></div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const $ = (id) => document.getElementById(id);
+const IS_ADMIN = {{ 'true' if current_user.role == 'admin' else 'false' }};
+
+async function init() {
+  const p = App.params();
+  App.fillMonthYear($("month"), $("year"), p.get("month"), p.get("year"));
+  await App.fillWorkshops($("workshop"), { allLabel: "Todas", selected: p.get("workshop_id"), activeOnly: false });
+  await App.fillClasses($("klass"), $("workshop").value, { allLabel: "Todas", selected: p.get("class_id"), activeOnly: false });
+  load();
+}
+
+async function load() {
+  const params = { year: $("year").value, month: $("month").value, workshop_id: $("workshop").value, class_id: $("klass").value };
+  history.replaceState(null, "", App.qs(params));
+  let lessons;
+  try {
+    lessons = await App.get("/api/lessons", params);
+  } catch (err) {
+    $("total").textContent = "";
+    $("list").innerHTML = App.errorState(err.message);
+    return;
+  }
+  $("total").textContent = `${lessons.length} aula(s) em ${App.MONTHS[params.month - 1]}/${params.year}`;
+  if (!lessons.length) {
+    $("list").innerHTML = '<div class="empty">Nenhuma aula registrada neste período.<br>'
+      + '<a class="btn btn-sm" href="/aulas/registrar">Registrar aula</a></div>';
+    return;
+  }
+  $("list").innerHTML = lessons.map((l) => {
+    const c = l.attendance_counts;
+    return `<article class="lesson-item">
+      <div class="lesson-meta"><strong>${App.fmtDate(l.date)}</strong><span class="badge">${App.esc(l.class_name)}</span></div>
+      <p>${App.esc(l.summary) || '<span class="muted">Sem resumo</span>'}</p>
+      ${l.occurrences ? `<p class="occ">⚠ Ocorrência: ${App.esc(l.occurrences)}</p>` : ""}
+      <div class="lesson-foot">
+        <span class="muted small">${c.present} presentes · ${c.absent} ausentes · ${c.excused} atestados</span>
+        <span class="btn-row">
+          <a class="btn btn-sm" href="/aulas/registrar?class_id=${l.class_id}&date=${l.date}">Editar</a>
+          ${IS_ADMIN ? `<button class="btn btn-sm btn-danger" data-delete="${l.id}" data-label="${App.fmtDate(l.date)} · ${App.esc(l.class_name)}">Excluir</button>` : ""}
+        </span>
+      </div>
+    </article>`;
+  }).join("");
+}
+
+$("list").addEventListener("click", async (e) => {
+  const btn = e.target.closest("[data-delete]");
+  if (!btn) return;
+  if (!confirm(`Excluir a aula ${btn.dataset.label} e todas as presenças dela? Esta ação não pode ser desfeita.`)) return;
+  btn.disabled = true;
+  try {
+    await App.api("DELETE", `/api/lessons/${btn.dataset.delete}`);
+    App.toast("Aula excluída.");
+    load();
+  } catch (err) {
+    App.toast(err.message, "error");
+    btn.disabled = false;
+  }
+});
+
+$("workshop").addEventListener("change", async () => {
+  await App.fillClasses($("klass"), $("workshop").value, { allLabel: "Todas", activeOnly: false });
+  load();
+});
+["month", "year", "klass"].forEach((id) => $(id).addEventListener("change", load));
+init();
+</script>
+{% endblock %}
