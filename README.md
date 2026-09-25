@@ -1,8 +1,12 @@
-# Oficinas Manager
+# Workshop Manager
 
 > A workshop operations platform for attendance, enrollment, monthly metrics and human-reviewed reporting.
 
 Built from a real operational need: replacing fragmented forms, spreadsheets and repetitive monthly reporting with one structured workflow.
+
+<p align="center">
+  <img src="./docs/architecture.svg" width="100%" alt="Workshop Manager architecture overview" />
+</p>
 
 ```text
 LESSON RECORD
